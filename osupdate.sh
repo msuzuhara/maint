@@ -1,14 +1,20 @@
 #!/bin/bash
+# usage : 
+#   manual
+#     sudo chmod 755 /path/to/osupdate.sh
+#     sudo /path/to/osupdate.sh
+#   cron (root)
+#     0 3 * * 0 /path/to/osupdate.sh
 
 set -euo pipefail
 
 # - function
 function log_info() {
-    echo "OS-UPDATE [INFO] $(date '+%Y-%m-%d %H:%M:%S') - $*"
+    echo "OS-UPDATE $(date '+%Y-%m-%d %H:%M:%S') - INFO  $*"
 }
 
 function log_error() {
-    echo "OS-UPDATE [ERROR] $(date '+%Y-%m-%d %H:%M:%S') - $*" >&2
+    echo "OS-UPDATE $(date '+%Y-%m-%d %H:%M:%S') - ERROR $*" >&2
 }
 
 function check_exist() {
@@ -27,25 +33,24 @@ function check_exist() {
 
 function wait_lock() {
     local lockfile="$1"
-    local max_retries=10
+    local max_retries=30
     local count=0
+    local wait_time=10
 
-    check_exist "fuser"
-
-    while fuser "$lockfile" >/dev/null 2>&1; do
+    while [ -f "$lockfile" ] || (command -v fuser &>/dev/null && fuser "$lockfile" >/dev/null 2>&1); do
         ((count++))
         if [ "$count" -ge "$max_retries" ]; then
-            log_error "error: lock time over"
+            log_error "lock timeout after $((max_retries * wait_time)) seconds for $lockfile"
             exit 1
         fi
-        sleep 5
+        sleep "$wait_time"
     done
 }
 
 function handle_error() {
     local rc=$1
-    lineno=$2
-    log_error "error: rc=$rc at line $lineno"
+    local lineno=$2
+    log_error "Trap rc=$rc at line $lineno"
     exit $rc
 }
 
@@ -59,7 +64,6 @@ if [ "$(id -u)" -ne 0 ]; then
     exit 1
 fi
 
-
 # dist detection
 if grep -qiE "debian|ubuntu|mint|pop" /etc/os-release || [ -f /etc/debian_version ]; then
     OS="debian"
@@ -68,7 +72,7 @@ elif grep -qiE "rhel|centos|rocky|almalinux|fedora" /etc/os-release; then
 elif grep -qiE "opensuse|suse" /etc/os-release; then
     OS="suse"
 else
-    log_error "update end error: Unsupported OS"
+    log_error "Unsupported OS"
     exit 1
 fi
 
@@ -80,26 +84,36 @@ if [ "$OS" = "debian" ]; then
 
     # update
     wait_lock "/var/lib/dpkg/lock"
+    wait_lock "/var/lib/dpkg/lock-frontend"
+    wait_lock "/var/lib/apt/lists/lock"
 
     export DEBIAN_FRONTEND=noninteractive
     apt-get -y update
-    apt-get -y upgrade # safety
+    apt-get -y upgrade
     apt-get -y dist-upgrade
     apt-get -y autoremove
+    apt-get -y autoclean
+
+    if [ -f /var/run/reboot-required ]; then
+        log_info "Reboot required"
+    fi
 fi
 
-## FEDORA
+## RHEL/FEDORA
 if [ "$OS" = "rhel" ]; then
     check_exist "dnf"
 
     # update
-    wait_lock "/var/lib/rpm/.rpm.lock"
     wait_lock "/var/cache/dnf/metadata_lock.pid"
 
-    dnf -y check-update
-    dnf -y upgrade 
+    dnf -y check-update || [ $? -eq 100 ]
     dnf -y upgrade --refresh
     dnf -y autoremove
+    dnf -y clean all
+
+    if command -v needs-restarting &>/dev/null && needs-restarting -r &>/dev/null; then
+        log_info "Reboot required"
+    fi
 fi
 
 ## SUSE
@@ -110,13 +124,16 @@ if [ "$OS" = "suse" ]; then
     wait_lock "/var/run/zypp.pid"
 
     zypper --non-interactive refresh
+    
     if grep -qi "tumbleweed" /etc/os-release || grep -qi "slowroll" /etc/os-release; then
         zypper --non-interactive dup
     else
         zypper --non-interactive update
     fi
+    
     ## please check format : zypper packages --unneeded
-    zypper --non-interactive packages --unneeded | awk '/^i/{print $3}' | xargs -r zypper --non-interactive remove
+    zypper --non-interactive packages --unneeded | awk '/^i/ && NF>=3 {print $3}' | xargs -r zypper --non-interactive remove
+    zypper --non-interactive clean --all
 fi
 
 log_info "end"
