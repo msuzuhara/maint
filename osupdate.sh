@@ -37,14 +37,18 @@ function wait_lock() {
     local count=0
     local wait_time=10
 
-    while [ -f "$lockfile" ] || (command -v fuser &>/dev/null && fuser "$lockfile" >/dev/null 2>&1); do
-        ((count++))
-        if [ "$count" -ge "$max_retries" ]; then
-            log_error "lock timeout after $((max_retries * wait_time)) seconds for $lockfile"
-            exit 1
-        fi
-        sleep "$wait_time"
-    done
+    if command -v fuser &>/dev/null; then
+        while [ fuser "$lockfile" >/dev/null 2>&1 ]; do
+            ((count++))
+            if [ "$count" -ge "$max_retries" ]; then
+                log_error "lock timeout after $((max_retries * wait_time)) seconds for $lockfile"
+                exit 1
+            fi
+            sleep "$wait_time"
+        done
+    else
+        log_error "fuser command not found"
+    fi
 }
 
 function handle_error() {
@@ -89,10 +93,9 @@ if [ "$OS" = "debian" ]; then
 
     export DEBIAN_FRONTEND=noninteractive
     apt-get -y update
-    apt-get -y upgrade
     apt-get -y dist-upgrade
     apt-get -y autoremove
-    apt-get -y autoclean
+    #apt-get -y autoclean
 
     if [ -f /var/run/reboot-required ]; then
         log_info "Reboot required"
@@ -106,10 +109,9 @@ if [ "$OS" = "rhel" ]; then
     # update
     wait_lock "/var/cache/dnf/metadata_lock.pid"
 
-    dnf -y check-update || [ $? -eq 100 ]
     dnf -y upgrade --refresh
     dnf -y autoremove
-    dnf -y clean all
+    #dnf -y clean all
 
     if command -v needs-restarting &>/dev/null && needs-restarting -r &>/dev/null; then
         log_info "Reboot required"
@@ -133,7 +135,7 @@ if [ "$OS" = "suse" ]; then
     
     ## please check format : zypper packages --unneeded
     zypper --non-interactive packages --unneeded | awk '/^i/ && NF>=3 {print $3}' | xargs -r zypper --non-interactive remove
-    zypper --non-interactive clean --all
+    #zypper --non-interactive clean --all
 fi
 
 log_info "end"
