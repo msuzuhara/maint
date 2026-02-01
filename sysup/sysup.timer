@@ -2,7 +2,7 @@
 #   /etc/systemd/system/sysup.timer
 # setting
 #   sudo systemctl daemon-reload
-#   sudo systemctl enable -now sysup.timer
+#   sudo systemctl enable --now sysup.timer
 #   sudo systemctl start sysup.timer
 [Unit]
 Description=System Update Timer
