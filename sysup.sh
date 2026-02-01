@@ -1,23 +1,23 @@
 #!/bin/bash
 # usage : 
 #   manual
-#     sudo chmod 755 /path/to/osupdate.sh
-#     sudo /path/to/osupdate.sh
+#     sudo chmod 755 /path/to/sysup.sh
+#     sudo /path/to/sysup.sh
 #   cron (root)
-#     0 3 * * 0 /path/to/osupdate.sh
+#     0 3 * * 0 /path/to/sysup.sh >> /var/log/sysup.log 2>&1
 
 set -euo pipefail
 
 # - function
-function log_info() {
+log_info() {
     echo "OS-UPDATE $(date '+%Y-%m-%d %H:%M:%S') - INFO  $*"
 }
 
-function log_error() {
+log_error() {
     echo "OS-UPDATE $(date '+%Y-%m-%d %H:%M:%S') - ERROR $*" >&2
 }
 
-function check_exist() {
+check_exist() {
     local checkfile="$1"
 
     if [ -z "$checkfile" ]; then
@@ -25,21 +25,25 @@ function check_exist() {
         exit 1
     fi
 
-    if ! command -v "$checkfile" &>/dev/null; then
+    if ! command -v "$checkfile" >/dev/null 2>&1; then
         log_error "$checkfile not found"
         exit 1
     fi
 }
 
-function wait_lock() {
+wait_lock() {
     local lockfile="$1"
     local max_retries=30
     local count=0
     local wait_time=10
 
-    if command -v fuser &>/dev/null; then
-        while [ fuser "$lockfile" >/dev/null 2>&1 ]; do
-            ((count++))
+    if [ ! -e "$lockfile" ]; then
+        return
+    fi
+
+    if command -v fuser >/dev/null 2>&1; then
+        while fuser "$lockfile" >/dev/null 2>&1; do
+            count=$((count + 1))
             if [ "$count" -ge "$max_retries" ]; then
                 log_error "lock timeout after $((max_retries * wait_time)) seconds for $lockfile"
                 exit 1
@@ -47,15 +51,15 @@ function wait_lock() {
             sleep "$wait_time"
         done
     else
-        log_error "fuser command not found"
+        log_error "fuser command not found, skipping lock check"
     fi
 }
 
-function handle_error() {
+handle_error() {
     local rc=$1
     local lineno=$2
     log_error "Trap rc=$rc at line $lineno"
-    exit $rc
+    exit "$rc"
 }
 
 trap 'handle_error $? $LINENO' ERR
@@ -113,7 +117,7 @@ if [ "$OS" = "rhel" ]; then
     dnf -y autoremove
     #dnf -y clean all
 
-    if command -v needs-restarting &>/dev/null && needs-restarting -r &>/dev/null; then
+    if command -v needs-restarting >/dev/null 2>&1 && needs-restarting -r >/dev/null 2>&1; then
         log_info "Reboot required"
     fi
 fi
@@ -126,15 +130,18 @@ if [ "$OS" = "suse" ]; then
     wait_lock "/var/run/zypp.pid"
 
     zypper --non-interactive refresh
-    
+
     if grep -qi "tumbleweed" /etc/os-release || grep -qi "slowroll" /etc/os-release; then
         zypper --non-interactive dup
     else
         zypper --non-interactive update
     fi
-    
+
     ## please check format : zypper packages --unneeded
-    zypper --non-interactive packages --unneeded | awk '/^i/ && NF>=3 {print $3}' | xargs -r zypper --non-interactive remove
+    unneeded_packages=$(zypper --non-interactive packages --unneeded | awk '/^i/ && NF>=3 {print $3}')
+    if [ -n "$unneeded_packages" ]; then
+        echo "$unneeded_packages" | xargs zypper --non-interactive remove
+    fi
     #zypper --non-interactive clean --all
 fi
 
