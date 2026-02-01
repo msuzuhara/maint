@@ -1,0 +1,20 @@
+# sysup.service
+#   /etc/systemd/system/sysup.service
+# setting
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now sysup.service
+#   sudo systemctl start sysup.service
+[Unit]
+Description=System Update Service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/path/to/sysup.sh
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=SYSUP
+TimeoutStartSec=7200
+User=root
+Restart=no
