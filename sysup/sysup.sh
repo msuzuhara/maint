@@ -1,10 +1,10 @@
 #!/bin/bash
 # usage : 
-#   sudo chmod 755 /path/to/sysup.sh
+#   sudo chmod 755 /usr/local/bin/sysup.sh
 #   manual
 #     sudo /path/to/sysup.sh
 #   cron (root)
-#     0 3 * * 0 /path/to/sysup.sh 2>&1 | logger -t "SYSUP"
+#     0 3 * * 0 /usr/local/bin/sysup.sh 2>&1 | logger -t "SYSUP"
 
 set -euo pipefail
 
