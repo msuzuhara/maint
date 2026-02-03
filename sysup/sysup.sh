@@ -2,7 +2,7 @@
 # usage : 
 #   sudo chmod 755 /usr/local/bin/sysup.sh
 #   manual
-#     sudo /path/to/sysup.sh
+#     sudo /usr/local/bin/sysup.sh
 #   cron (root)
 #     0 3 * * 0 /usr/local/bin/sysup.sh 2>&1 | logger -t "SYSUP"
 
@@ -10,11 +10,11 @@ set -euo pipefail
 
 # - function
 log_info() {
-    echo "OS-UPDATE $(date '+%Y-%m-%d %H:%M:%S') - INFO  $*"
+    echo "SYSUP $(date '+%Y-%m-%d %H:%M:%S') - INFO  $*"
 }
 
 log_error() {
-    echo "OS-UPDATE $(date '+%Y-%m-%d %H:%M:%S') - ERROR $*" >&2
+    echo "SYSUP $(date '+%Y-%m-%d %H:%M:%S') - ERROR $*" >&2
 }
 
 check_exist() {
