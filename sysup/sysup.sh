@@ -137,13 +137,6 @@ if [ "$OS" = "suse" ]; then
         zypper --non-interactive update
     fi
 
-    ## please check format : zypper packages --unneeded
-    unneeded_packages=$(zypper --non-interactive --table-style 10 packages --unneeded | awk -F ':' 'NF == 5 && NR > 1 && $3 !~ /^[ \t]*Name[ \t]*$/ {gsub(/^[ \t]+|[ \t]+$/, "", $3); print $3}' | uniq)
-    if [ -n "$unneeded_packages" ]; then
-        echo "$unneeded_packages" | xargs zypper --non-interactive remove
-    fi
-    #zypper --non-interactive clean --all
-
     if command -v needs-restarting >/dev/null 2>&1 && ! needs-restarting -r >/dev/null 2>&1; then
         log_info "Reboot required"
     fi
