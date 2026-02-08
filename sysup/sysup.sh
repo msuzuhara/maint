@@ -117,7 +117,7 @@ if [ "$OS" = "rhel" ]; then
     dnf -y autoremove
     #dnf -y clean all
 
-    if command -v needs-restarting >/dev/null 2>&1 && needs-restarting -r >/dev/null 2>&1; then
+    if command -v needs-restarting >/dev/null 2>&1 && ! needs-restarting -r >/dev/null 2>&1; then
         log_info "Reboot required"
     fi
 fi
@@ -138,11 +138,16 @@ if [ "$OS" = "suse" ]; then
     fi
 
     ## please check format : zypper packages --unneeded
-    unneeded_packages=$(zypper --non-interactive packages --unneeded | awk '/^i/ && NF>=3 {print $3}')
+    unneeded_packages=$(zypper --non-interactive --table-style 10 packages --unneeded | awk -F ':' 'NF == 5 && NR > 1 && $3 !~ /^[ \t]*Name[ \t]*$/ {gsub(/^[ \t]+|[ \t]+$/, "", $3); print $3}' | uniq)
     if [ -n "$unneeded_packages" ]; then
         echo "$unneeded_packages" | xargs zypper --non-interactive remove
     fi
     #zypper --non-interactive clean --all
+
+    if command -v needs-restarting >/dev/null 2>&1 && ! needs-restarting -r >/dev/null 2>&1; then
+        log_info "Reboot required"
+    fi
+
 fi
 
 log_info "end"
