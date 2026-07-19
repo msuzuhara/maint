@@ -1,0 +1,16 @@
+# sysup.service
+#   /etc/systemd/system/sysup.service
+[Unit]
+Description=System Update Service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/sysup.sh
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=SYSUP
+TimeoutStartSec=7200
+User=root
+Restart=no

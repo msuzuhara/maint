@@ -1,0 +1,17 @@
+# sysup.timer
+#   /etc/systemd/system/sysup.timer
+# setting
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now sysup.timer
+#   sudo systemctl start sysup.timer
+[Unit]
+Description=System Update Timer
+
+[Timer]
+Unit=sysup.service
+OnCalendar=*-*-* 03:00:00
+Persistent=true
+RandomizedDelaySec=30min
+
+[Install]
+WantedBy=timers.target
