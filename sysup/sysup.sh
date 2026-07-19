@@ -10,11 +10,11 @@ set -euo pipefail
 
 # - function
 log_info() {
-    echo "SYSUP $(date '+%Y-%m-%d %H:%M:%S') - INFO  $*"
+    printf "SYSUP %s - INFO  %s\n" "$(date '+%Y-%m-%d %H:%M:%S')" "$*"
 }
 
 log_error() {
-    echo "SYSUP $(date '+%Y-%m-%d %H:%M:%S') - ERROR $*" >&2
+    printf "SYSUP %s - ERROR %s\n" "$(date '+%Y-%m-%d %H:%M:%S')" "$*" >&2
 }
 
 check_exist() {
@@ -51,7 +51,7 @@ wait_lock() {
             sleep "$wait_time"
         done
     else
-        log_error "fuser command not found, skipping lock check"
+        log_info "fuser command not found, skipping lock check"
     fi
 }
 
@@ -66,11 +66,40 @@ trap 'handle_error $? $LINENO' ERR
 
 # - main
 log_info "start"
+reboot_check=0
+reboot_exec=0
+
+# single instance lock using flock when available
+lock_file="/var/run/sysup.lock"
+exec 200>"$lock_file" || { log_error "Unable to open lockfile $lock_file"; exit 1; }
+if command -v flock >/dev/null 2>&1; then
+    if ! flock -n 200; then
+        log_info "Another instance is running, exiting"
+        exit 0
+    fi
+else
+    log_info "flock not available, skipping single-instance lock"
+fi
 
 if [ "$(id -u)" -ne 0 ]; then
     log_error "This script must be run as root"
     exit 1
 fi
+
+# option parsing
+while getopts "rs" OPT
+do
+    case $OPT in
+        r)  reboot_exec=1
+           ;;
+        s)  reboot_check=1
+           ;;
+        \?) log_error "Invalid option: -$OPTARG"
+            log_error "Usage: sysup.sh [-r] [-s]"
+            exit 2
+           ;;
+    esac
+done
 
 # dist detection
 if grep -qiE "debian|ubuntu|mint|pop" /etc/os-release || [ -f /etc/debian_version ]; then
@@ -101,8 +130,11 @@ if [ "$OS" = "debian" ]; then
     apt-get -y autoremove
     #apt-get -y autoclean
 
-    if [ -f /var/run/reboot-required ]; then
+    if [ -f /var/run/reboot-required ] || [ -f /var/run/reboot-required.necessary ]; then
         log_info "Reboot required"
+        if [ "$reboot_check" -eq 1 ]; then
+            reboot_exec=1
+        fi
     fi
 fi
 
@@ -117,8 +149,13 @@ if [ "$OS" = "rhel" ]; then
     dnf -y autoremove
     #dnf -y clean all
 
-    if command -v needs-restarting >/dev/null 2>&1 && ! needs-restarting -r >/dev/null 2>&1; then
-        log_info "Reboot required"
+    if command -v needs-restarting >/dev/null 2>&1; then
+        if needs-restarting -r >/dev/null 2>&1; then
+            log_info "Reboot required"
+            if [ "$reboot_check" -eq 1 ]; then
+                reboot_exec=1
+            fi
+        fi
     fi
 fi
 
@@ -137,12 +174,29 @@ if [ "$OS" = "suse" ]; then
         zypper --non-interactive update
     fi
 
-    if command -v needs-restarting >/dev/null 2>&1 && ! needs-restarting -r >/dev/null 2>&1; then
-        log_info "Reboot required"
+    if command -v needs-restarting >/dev/null 2>&1; then
+        if needs-restarting -r >/dev/null 2>&1; then
+            log_info "Reboot required"
+            if [ "$reboot_check" -eq 1 ]; then
+                reboot_exec=1
+            fi
+        fi
     fi
 
 fi
 
 log_info "end"
+
+if [ "$reboot_exec" -eq 1 ]; then
+    log_info "A reboot is required to complete the updates."
+    if command -v systemctl >/dev/null 2>&1; then
+        systemctl reboot
+    elif command -v shutdown >/dev/null 2>&1; then
+        shutdown -r now
+    else
+        log_error "No reboot command available (systemctl/shutdown)"
+        exit 1
+    fi
+fi
 
 exit 0
